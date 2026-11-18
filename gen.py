@@ -2,6 +2,7 @@
 """Render news-image-20261117 variants. Local build only (uses PIL + DejaVu).
 Deterministic: no time, no randomness, fixed layout. Usage: python3 gen.py A|B|C
 Writes candidates/<variant>/entry.png (1024x1024)."""
+import math
 import sys
 from pathlib import Path
 
@@ -89,12 +90,18 @@ def section_label(d, x, y, text):
 
 
 # ---------------------------------------------------------------- icons
-def draw_icon(d, kind, x, y, w, h):
-    """Simple flat editorial illustration inside box (x,y,w,h)."""
+# ---------------------------------------------------------------- icons
+def draw_icon(d, s, x, y, w, h):
+    """Original flat editorial illustration inside box (x,y,w,h), drawn for
+    the story dict s. Richer mini-scenes: sky, sun, clouds, smoke, debris,
+    skylines, scoreboards — all drawn from scratch with PIL primitives."""
+    kind = s["icon"]
     sky_h = int(h * 0.62)
     if kind in ("bridge", "drone", "jet", "plane", "tanker"):
         d.rectangle([x, y, x + w, y + sky_h], fill=SKY)
         d.rectangle([x, y + sky_h, x + w, y + h], fill=WATER)
+        stipple(d, x, y, w, sky_h, (168, 192, 205), n=110, seed=x + y)
+        stipple(d, x, y + sky_h, w, h - sky_h, (110, 150, 185), n=60, seed=x * 3 + y)
     elif kind in ("football", "leaf", "frog", "panda", "dino"):
         d.rectangle([x, y, x + w, y + h], fill=(226, 232, 214))
     elif kind in ("chart_down", "chart_up"):
@@ -105,61 +112,112 @@ def draw_icon(d, kind, x, y, w, h):
         d.rectangle([x, y, x + w, y + h], fill=(238, 232, 216))
     cx, cy = x + w / 2, y + h / 2
     if kind == "bridge":
-        # deck + towers, middle span dropped into the water
+        # sun + clouds
+        d.ellipse([x + w - 34, y + 8, x + w - 14, y + 28], fill=(245, 220, 130))
+        for cx0 in (x + 16, x + int(w * 0.45)):
+            d.ellipse([cx0, y + 12, cx0 + 34, y + 22], fill=(250, 250, 245))
         deck = y + sky_h - 8
-        d.rectangle([x + 4, deck, x + w - 4, deck + 6], fill=(60, 58, 54))
-        towers = [x + w * 0.18, x + w * 0.72] if w <= 500 else \
-            [x + w * 0.12, x + w * 0.50, x + w * 0.88]
-        for tx in towers:
-            d.rectangle([tx, y + 12, tx + 6, deck], fill=(60, 58, 54))
-            d.rectangle([tx - 6, y + 8, tx + 12, y + 14], fill=(60, 58, 54))
-        if w > 500:
-            for a, b in zip(towers, towers[1:]):
-                d.arc([a, y + 8, b + 6, deck + 30], 0, 180, fill=(60, 58, 54), width=2)
-        d.polygon([(x + w * 0.42, deck + 2), (x + w * 0.58, deck + 2),
-                   (x + w * 0.55, deck + 26), (x + w * 0.45, deck + 26)], fill=(90, 86, 80))
-        d.line([(x + w * 0.42, deck), (x + w * 0.45, deck + 26)], fill=(60, 58, 54), width=2)
-        for sx in (x + w * 0.30, x + w * 0.66):
-            d.ellipse([sx, y + 14, sx + 14, y + 24], fill=(245, 245, 240))
+        # two towers with cross-bracing
+        for tx in (x + w * 0.18, x + w * 0.72):
+            d.rectangle([tx, y + 26, tx + 6, deck], fill=(60, 58, 54))
+            d.rectangle([tx - 6, y + 22, tx + 12, y + 28], fill=(60, 58, 54))
+            d.rectangle([tx, y + 44, tx + 6, y + 48], fill=(60, 58, 54))
+        # deck standing left and right, gap in the middle
+        d.rectangle([x + 4, deck, x + w * 0.40, deck + 6], fill=(60, 58, 54))
+        d.rectangle([x + w * 0.60, deck, x + w - 4, deck + 6], fill=(60, 58, 54))
+        # fallen span: tilted slab sinking into the water
+        d.polygon([(x + w * 0.42, deck + 2), (x + w * 0.56, deck + 2),
+                   (x + w * 0.52, deck + 26), (x + w * 0.46, deck + 26)], fill=(90, 86, 80))
+        # smoke plumes rising from the gap
+        for sx, sy, sr in ((x + w * 0.47, y + 16, 9), (x + w * 0.52, y + 8, 7),
+                           (x + w * 0.44, y + 26, 6)):
+            d.ellipse([sx - sr, sy - sr, sx + sr, sy + sr], fill=(200, 196, 188))
+        # debris in the water
+        for dx, dy in ((x + w * 0.46, deck + 34), (x + w * 0.55, deck + 40)):
+            d.rectangle([dx, dy, dx + 12, dy + 4], fill=(90, 86, 80))
+        # small red boat
+        bx0 = x + w * 0.68
+        d.polygon([(bx0, deck + 14), (bx0 + 26, deck + 14), (bx0 + 20, deck + 22),
+                   (bx0 + 6, deck + 22)], fill=(163, 22, 33))
+        d.line([(bx0 + 12, deck + 14), (bx0 + 12, deck + 2)], fill=(60, 58, 54), width=2)
+        # second boat farther away, and birds over the strait
+        bx1 = x + w * 0.12
+        d.polygon([(bx1, deck + 20), (bx1 + 18, deck + 20), (bx1 + 14, deck + 26),
+                   (bx1 + 4, deck + 26)], fill=(90, 86, 80))
+        for bxx, byy in ((x + w * 0.30, y + 34), (x + w * 0.36, y + 28), (x + w * 0.60, y + 36)):
+            d.line([(bxx - 5, byy), (bxx, byy - 4), (bxx + 5, byy)], fill=(60, 58, 54), width=2)
         for wx in range(0, int(w), 26):
             d.arc([x + wx, y + sky_h + 12, x + wx + 18, y + sky_h + 22], 0, 180,
                   fill=(255, 255, 255), width=2)
     elif kind == "drone":
+        # sun + base buildings
+        d.ellipse([x + 10, y + 8, x + 28, y + 26], fill=(245, 220, 130))
+        for i, bh in enumerate((16, 24, 14)):
+            bx0 = x + 12 + i * 30
+            d.rectangle([bx0, y + h - 6 - bh, bx0 + 22, y + h - 6], fill=(90, 86, 80))
         d.line([(x + 6, y + h * 0.55), (x + w - 6, y + h * 0.30)], fill=(90, 86, 80), width=2)
         bx, by = cx - 12, cy - 8
         d.rectangle([bx, by, bx + 24, by + 12], fill=(40, 40, 44))
         for ox, oy in ((bx - 8, by - 6), (bx + 24, by - 6), (bx - 8, by + 8), (bx + 24, by + 8)):
             d.line([(ox - 6, oy), (ox + 10, oy)], fill=(40, 40, 44), width=3)
         d.ellipse([cx - 3, by + 12, cx + 3, by + 18], fill=RED)
+        # explosion burst near the base
+        ex, ey = x + w * 0.80, y + h * 0.70
+        pts = []
+        for k in range(16):
+            ang = math.pi * k / 8
+            r = 14 if k % 2 == 0 else 6
+            pts.append((ex + r * math.cos(ang), ey + r * math.sin(ang)))
+        d.polygon(pts, fill=(230, 120, 30))
+        d.ellipse([ex - 5, ey - 5, ex + 5, ey + 5], fill=(245, 200, 60))
     elif kind == "jet":
+        d.ellipse([x + w - 30, y + 8, x + w - 12, y + 26], fill=(245, 220, 130))
         d.polygon([(x + w * 0.15, cy), (x + w * 0.55, cy - 12), (x + w * 0.92, cy - 4),
                    (x + w * 0.92, cy + 4), (x + w * 0.55, cy + 12)], fill=(70, 72, 78))
         d.polygon([(x + w * 0.45, cy - 10), (x + w * 0.62, cy - 30), (x + w * 0.66, cy - 8)], fill=(70, 72, 78))
         d.line([(x + 4, cy + 14), (x + w * 0.45, cy + 6)], fill=(255, 255, 255), width=2)
         d.line([(x + 4, cy + 22), (x + w * 0.40, cy + 12)], fill=(255, 255, 255), width=2)
     elif kind == "plane":
+        d.ellipse([x + w - 30, y + 8, x + w - 12, y + 26], fill=(245, 220, 130))
+        for cx0, cy0 in ((x + 12, y + 12), (x + int(w * 0.52), y + 6)):
+            d.ellipse([cx0, cy0, cx0 + 30, cy0 + 10], fill=(250, 250, 245))
         d.polygon([(x + w * 0.12, cy), (x + w * 0.85, cy - 8), (x + w * 0.95, cy),
                    (x + w * 0.85, cy + 8)], fill=(70, 72, 78))
         d.polygon([(x + w * 0.42, cy - 6), (x + w * 0.58, cy - 26), (x + w * 0.64, cy - 4)], fill=(70, 72, 78))
         d.polygon([(x + w * 0.42, cy + 6), (x + w * 0.58, cy + 24), (x + w * 0.64, cy + 4)], fill=(70, 72, 78))
         d.line([(x + 4, cy + 12), (x + w * 0.5, cy + 4)], fill=(255, 255, 255), width=2)
+        d.line([(x + 4, cy + 20), (x + w * 0.45, cy + 12)], fill=(255, 255, 255), width=2)
     elif kind == "summit":
-        for i, col in enumerate(((163, 22, 33), (30, 80, 140), (40, 120, 70))):
-            px = x + w * (0.22 + 0.28 * i)
-            d.line([(px, y + 10), (px, y + h - 12)], fill=(60, 58, 54), width=3)
-            d.polygon([(px, y + 10), (px + 26, y + 18), (px, y + 26)], fill=col)
+        # skyline behind the flags
+        for i, bh in enumerate((18, 30, 24, 36, 22)):
+            bx0 = x + 10 + i * (w - 20) / 5
+            d.rectangle([bx0, y + h - 12 - bh, bx0 + (w - 20) / 5 - 4, y + h - 12],
+                        fill=(120, 118, 112))
+        for i, col in enumerate(((163, 22, 33), (30, 80, 140), (230, 130, 30), (40, 120, 70))):
+            px = x + w * (0.16 + 0.23 * i)
+            d.line([(px, y + 8), (px, y + h - 12)], fill=(60, 58, 54), width=3)
+            d.polygon([(px, y + 8), (px + 26, y + 16), (px, y + 24)], fill=col)
         d.rectangle([x + 8, y + h - 12, x + w - 8, y + h - 8], fill=(60, 58, 54))
     elif kind == "chip":
+        # faint circuit traces on the background
+        for tx0, ty0, tx1, ty1 in ((x + 8, y + 10, x + w - 8, y + 10),
+                                   (x + 8, y + h - 10, x + w - 8, y + h - 10),
+                                   (x + 10, y + 8, x + 10, y + h - 8)):
+            d.line([(tx0, ty0), (tx1, ty1)], fill=(190, 195, 205), width=2)
+            d.ellipse([tx1 - 3, ty1 - 3, tx1 + 3, ty1 + 3], fill=(150, 160, 175))
         s = min(w, h) * 0.52
         bx, by = cx - s / 2, cy - s / 2
         d.rectangle([bx, by, bx + s, by + s], fill=(30, 34, 44))
         d.rectangle([bx + s * 0.28, by + s * 0.28, bx + s * 0.72, by + s * 0.72],
                     outline=(120, 180, 220), width=2)
+        d.rectangle([bx + s * 0.42, by + s * 0.42, bx + s * 0.58, by + s * 0.58], fill=(163, 22, 33))
         for i in range(4):
             px = bx + s * (0.2 + 0.2 * i)
             d.line([(px, by - 8), (px, by)], fill=(30, 34, 44), width=3)
             d.line([(px, by + s), (px, by + s + 8)], fill=(30, 34, 44), width=3)
     elif kind in ("chart_down", "chart_up"):
+        for gy in (y + h * 0.30, y + h * 0.55, y + h * 0.80):
+            d.line([(x + 10, gy), (x + w - 6, gy)], fill=(232, 230, 224), width=1)
         d.line([(x + 10, y + 8), (x + 10, y + h - 10), (x + w - 6, y + h - 10)],
                fill=(60, 58, 54), width=2)
         vals = [0.85, 0.65, 0.45, 0.25] if kind == "chart_down" else [0.25, 0.45, 0.65, 0.85]
@@ -168,16 +226,35 @@ def draw_icon(d, kind, x, y, w, h):
         for i, v in enumerate(vals):
             bh = (h - 26) * v
             d.rectangle([x + 14 + i * bw, y + h - 10 - bh, x + 14 + (i + 1) * bw - 4, y + h - 10], fill=col)
+        # trend arrow across the bars
+        ax0, ay0 = x + 14, y + (18 if kind == "chart_down" else h - 22)
+        ax1, ay1 = x + w - 12, y + (h - 22 if kind == "chart_down" else 18)
+        d.line([(ax0, ay0), (ax1, ay1)], fill=(30, 30, 34), width=2)
+        d.polygon([(ax1, ay1), (ax1 - 10, ay1 - 2), (ax1 - 2, ay1 - 10)] if kind == "chart_down"
+                  else [(ax1, ay1), (ax1 - 10, ay1 + 2), (ax1 - 2, ay1 + 10)], fill=(30, 30, 34))
     elif kind == "football":
-        d.rectangle([x, y, x + w, y + h], fill=(74, 140, 74))
+        # mown stripes + goals + ball
+        for i in range(4):
+            d.rectangle([x + i * w / 4, y, x + (i + 1) * w / 4, y + h],
+                        fill=(74, 140, 74) if i % 2 == 0 else (64, 128, 64))
         d.line([(x, cy), (x + w, cy)], fill=(255, 255, 255), width=2)
         d.ellipse([cx - 16, cy - 16, cx + 16, cy + 16], outline=(255, 255, 255), width=2)
+        for gx in (x + 2, x + w - 8):
+            d.rectangle([gx, cy - 14, gx + 6, cy + 14], outline=(255, 255, 255), width=2)
         d.ellipse([cx - 9, cy - 9, cx + 9, cy + 9], fill=(255, 255, 255))
         d.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], fill=(40, 40, 40))
+        if s.get("score"):
+            d.rectangle([x, y, x + w, y + 16], fill=(30, 30, 34))
+            tf = F(SANS_B, 11)
+            t = "%s  %s  %s" % (s["teams"][0], s["score"], s["teams"][1])
+            tw = d.textlength(t, font=tf)
+            d.text((x + (w - tw) / 2, y + 2), t, font=tf, fill=(255, 255, 255))
+            d.rectangle([x, y + h - 6, x + w, y + h], fill=s["kit"][0])
     elif kind == "virus":
+        for bx0, by0, br in ((x + 14, y + 12, 5), (x + w - 18, y + 16, 4), (x + w - 14, y + h - 16, 6)):
+            d.ellipse([bx0 - br, by0 - br, bx0 + br, by0 + br], fill=(220, 180, 200))
         r = min(w, h) * 0.26
         for a in range(0, 360, 45):
-            import math
             ex = cx + (r + 8) * math.cos(math.radians(a))
             ey = cy + (r + 8) * math.sin(math.radians(a))
             d.line([(cx, cy), (ex, ey)], fill=(140, 40, 90), width=3)
@@ -185,7 +262,8 @@ def draw_icon(d, kind, x, y, w, h):
         d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(140, 40, 90))
         d.ellipse([cx - r * 0.4, cy - r * 0.5, cx - r * 0.1, cy - r * 0.2], fill=(200, 120, 160))
     elif kind == "leaf":
-        # pointed leaf: two curved edges meeting at tip and stem
+        d.ellipse([x + 14, y + 10, x + 26, y + 22], fill=(200, 220, 180))
+        d.ellipse([x + w - 26, y + 14, x + w - 14, y + 26], fill=(200, 220, 180))
         pts = [(cx, y + 6)]
         for i in range(1, 9):
             t = i / 8
@@ -212,10 +290,13 @@ def draw_icon(d, kind, x, y, w, h):
                    (cx - 20, cy + 6), (cx - 8, cy + 12)], fill=(230, 120, 30))
         d.ellipse([cx - 7, cy + 2, cx + 7, cy + 16], fill=(245, 200, 60))
     elif kind == "aid":
-        d.rectangle([x + w * 0.2, y + h * 0.25, x + w * 0.8, y + h * 0.75], fill=(255, 255, 255),
+        # tent + stacked boxes + red-cross crate
+        d.polygon([(cx - 34, y + h - 12), (cx, y + h - 42), (cx + 34, y + h - 12)], fill=(210, 190, 150))
+        d.polygon([(cx - 9, y + h - 12), (cx, y + h - 30), (cx + 9, y + h - 12)], fill=(90, 70, 50))
+        d.rectangle([x + w * 0.2, y + 8, x + w * 0.8, y + h * 0.52], fill=(255, 255, 255),
                     outline=(60, 58, 54), width=2)
-        d.rectangle([cx - 5, y + h * 0.32, cx + 5, y + h * 0.68], fill=RED)
-        d.rectangle([x + w * 0.28, cy - 5, x + w * 0.72, cy + 5], fill=RED)
+        d.rectangle([cx - 5, y + 16, cx + 5, y + h * 0.46], fill=RED)
+        d.rectangle([x + w * 0.28, cy - 14, x + w * 0.72, cy - 4], fill=RED)
     elif kind == "robot":
         d.rectangle([cx - 20, cy - 14, cx + 20, cy + 16], fill=(180, 185, 195),
                     outline=(60, 58, 54), width=2)
@@ -267,6 +348,7 @@ def draw_icon(d, kind, x, y, w, h):
     elif kind == "deal":
         d.ellipse([cx - 24, cy - 10, cx + 2, cy + 16], outline=(30, 80, 140), width=4)
         d.ellipse([cx - 2, cy - 10, cx + 24, cy + 16], outline=RED, width=4)
+
 
 # ---------------------------------------------------------------- world map
 CONTINENTS = [
@@ -337,19 +419,29 @@ def masthead(d):
     return 122
 
 
-def story_panel(d, s, x, y, w, h, icon_h, head_size=16, sub_size=12, sub_max=2):
+def sub_lines_for(d, text, size, maxw, max_lines):
+    """Wrap sub text, shrinking the font until it fits max_lines (min 9px)."""
+    for sz in (size, size - 1, 9):
+        f = F(SANS, sz)
+        lines = wrap(d, text, f, maxw)
+        if len(lines) <= max_lines:
+            return f, lines
+    f = F(SANS, 9)
+    return f, wrap(d, text, f, maxw)[:max_lines]
+
+
+def story_panel(d, s, x, y, w, h, icon_h, head_size=16, sub_size=12, sub_max=2, head_max=2):
     d.rectangle([x, y, x + w, y + h], outline=LINE, width=1)
-    draw_icon(d, s["icon"], x + 1, y + 1, w - 2, icon_h)
+    draw_icon(d, s, x + 1, y + 1, w - 2, icon_h)
     num_badge(d, x + 6, y + 6, s["n"])
-    ty = y + icon_h + 8
-    f, lines = fit_lines(d, s["head"], F(SANS_B, head_size), w - 14, 2)
+    ty = y + icon_h + 7
+    f, lines = fit_lines(d, s["head"], F(SANS_B, head_size), w - 14, head_max)
     ty = text_block(d, x + 7, ty, lines, f, INK)
     # sub gets only the lines that still fit inside the panel
-    room = (y + h - 4) - (ty + 2)
-    max_sub = max(0, min(sub_max, room // int(sub_size * 1.22)))
+    room = (y + h - 3) - (ty + 2)
+    max_sub = max(0, min(sub_max, room // 11))
     if max_sub:
-        sf = F(SANS, sub_size)
-        sub_lines = wrap(d, s["sub"], sf, w - 14)[:max_sub]
+        sf, sub_lines = sub_lines_for(d, s["sub"], sub_size, w - 14, max_sub)
         text_block(d, x + 7, ty + 2, sub_lines, sf, MUTED)
 
 
@@ -370,49 +462,98 @@ def compact_cell(d, s, x, y, w):
     return y + 17
 
 
+def compact_cell2(d, s, x, y, w):
+    """Headline + one full-sentence sub, both on one line each."""
+    f = F(SANS_B, 11)
+    n = str(s["n"])
+    nw = d.textlength(n + "  ", font=f)
+    d.text((x, y), n, font=f, fill=RED)
+    size = 11
+    while size > 10:
+        ff = F(SANS_B, size)
+        if d.textlength(s["head"], font=ff) <= w - nw - 2:
+            break
+        size -= 1
+    d.text((x + nw, y), s["head"], font=F(SANS_B, size), fill=INK)
+    avail = w - nw - 2
+    sf = F(SANS, 10)
+    if d.textlength(s["sub"], font=sf) > avail:
+        sf = F(SANS, 9)
+    d.text((x + nw, y + 13), s["sub"], font=sf, fill=MUTED)
+    return y + 26
+
+
+def grain(img):
+    """Deterministic newsprint speckle on the paper (fixed seed)."""
+    import random
+    dd = ImageDraw.Draw(img)
+    rnd = random.Random(20261117)
+    for _ in range(6000):
+        gx = rnd.randint(0, W - 1)
+        gy = rnd.randint(0, H - 1)
+        c = (236, 230, 214) if rnd.random() < 0.5 else (252, 248, 236)
+        dd.point((gx, gy), fill=c)
+
+
+def stipple(d, x, y, w, h, color, n=90, seed=0):
+    """Deterministic Ben-Day style dots inside a rect (fixed seed per panel)."""
+    import random
+    rnd = random.Random(777000 + seed)
+    for _ in range(n):
+        px = rnd.randint(x + 2, x + w - 3)
+        py = rnd.randint(y + 2, y + h - 3)
+        d.point((px, py), fill=color)
+
+
 # ---------------------------------------------------------------- variant A
 def build_A():
+    """Front page v2: lead + 13 illustrated stories (1 lead, 8 full panels,
+    4 small panels) + 32 more stories with one-sentence summaries + map.
+    Layout: masthead 122 | lead 128-260 | rows 268-408, 416-556, 564-656 |
+    label 664-692 | compact 692-900 | map label 908 | map 926-1006 | footer."""
     img = Image.new("RGB", (W, H), PAPER)
+    grain(img)
     d = ImageDraw.Draw(img)
     y = masthead(d)
     s1 = STORIES[0]
-    # lead
-    draw_icon(d, s1["icon"], M, y, 330, 176)
-    d.rectangle([M, y, M + 330, y + 176], outline=LINE, width=1)
-    num_badge(d, M + 8, y + 8, 1, r=13)
-    tx = M + 346
-    d.text((tx, y + 2), "1  •  LEAD — UKRAINE, EUROPE", font=F(SANS_B, 14), fill=RED)
-    f, lines = fit_lines(d, s1["head"], F(SERIF_B, 40), W - M - tx, 2)
-    ty = text_block(d, tx, y + 26, lines, f, INK)
-    sf = F(SANS, 19)
+    # lead: big scene left, two-sentence summary right
+    ly, lh = 128, 132
+    draw_icon(d, s1, M, ly, 300, lh)
+    d.rectangle([M, ly, M + 300, ly + lh], outline=LINE, width=1)
+    num_badge(d, M + 8, ly + 8, 1, r=13)
+    tx = M + 316
+    d.text((tx, ly + 2), "1  \u2022  LEAD \u2014 UKRAINE, EUROPE", font=F(SANS_B, 13), fill=RED)
+    f, lines = fit_lines(d, s1["head"], F(SERIF_B, 38), W - M - tx, 2)
+    ty = text_block(d, tx, ly + 22, lines, f, INK)
+    sf = F(SANS, 15)
     sub_lines = wrap(d, s1["sub"], sf, W - M - tx)[:3]
     text_block(d, tx, ty + 6, sub_lines, sf, MUTED)
-    y = 306
-    # illustrated rows: stories 2-5, then 6-9
+    # illustrated rows: stories 2-5 and 6-9, full panels with 3-line subs
     for row, stories in enumerate((STORIES[1:5], STORIES[5:9])):
-        ry = y + row * 172
-        rh = 164 if row == 0 else 146
-        ih = 88 if row == 0 else 72
+        ry = 268 + row * 148
         for i, s in enumerate(stories):
-            px = M + i * 244
-            story_panel(d, s, px, ry, 232, rh, ih,
-                        head_size=16 if row == 0 else 15,
-                        sub_size=12 if row == 0 else 11)
-    y = 632
-    y = section_label(d, M, y, "THE REST OF THE DAY  —  36 MORE STORIES")
+            story_panel(d, s, M + i * 244, ry, 232, 140, 56,
+                        head_size=15, sub_size=10, sub_max=3)
+    # small illustrated row: stories 10-13 (football scoreboards + Rwanda hub)
+    for i, s in enumerate(STORIES[9:13]):
+        story_panel(d, s, M + i * 244, 564, 232, 92, 42,
+                    head_size=13, sub_size=9, sub_max=2, head_max=1)
+    y = 664
+    y = section_label(d, M, y, "THE REST OF THE DAY  \u2014  32 MORE STORIES")
     gy = y
-    for col in range(3):
-        cx = M + col * 324
-        for r in range(12):
-            s = STORIES[9 + col * 12 + r]
-            compact_cell(d, s, cx, gy + r * 16, 312)
-    y = 856
-    d.text((M, y), "WHERE IT HAPPENED — 17 NOVEMBER 2026  (red dots: stories 1–45, numbered 1–9)",
+    for col in range(4):
+        cx = M + col * 244
+        for r in range(8):
+            s = STORIES[13 + col * 8 + r]
+            compact_cell2(d, s, cx, gy + r * 26, 233)
+    y = 908
+    d.text((M, y), "WHERE IT HAPPENED \u2014 17 NOVEMBER 2026  (red dots: stories 1\u201345, numbered 1\u20139)",
            font=F(SANS_B, 12), fill=RED)
-    draw_map(d, M, y + 18, CW, 114)
-    d.text((M, 994), "45 STORIES  •  TUESDAY 17 NOVEMBER 2026  •  SOURCES: REUTERS, AP, BLOOMBERG, BBC, UN NEWS, LE MONDE",
+    draw_map(d, M, y + 18, CW, 80)
+    d.text((M, 1012), "45 STORIES  \u2022  TUESDAY 17 NOVEMBER 2026  \u2022  SOURCES: REUTERS, AP, BLOOMBERG, BBC, UN NEWS, LE MONDE",
            font=F(SANS, 10), fill=MUTED)
     return img
+
 
 # ---------------------------------------------------------------- variant B
 def build_B():
@@ -421,7 +562,7 @@ def build_B():
     y = masthead(d)
     s1 = STORIES[0]
     # lead band: big illustration, headline below
-    draw_icon(d, s1["icon"], M, y, CW, 150)
+    draw_icon(d, s1, M, y, CW, 150)
     d.rectangle([M, y, M + CW, y + 150], outline=LINE, width=1)
     num_badge(d, M + 8, y + 8, 1, r=13)
     ty = y + 158
